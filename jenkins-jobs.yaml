@@ -1,0 +1,97 @@
+- defaults:
+    name: global
+    mail-to: aweiteka@redhat.com
+    description: >
+        A jenkins-jobs template to create jobs in Jenkins.
+        Do not edit this job through the web.
+    # use IP addr or hostname
+    ose-uri: localhost
+    ose-username: test
+    ose-password: test
+    ose-insecure: true
+    # use secret token per steps 3 and 9 (confirm)
+    # https://github.com/openshift/origin/blob/master/examples/jenkins/README.md
+    #ose-api-auth-token: <token>
+    ose-project-namespace: test
+    ose-imagestream-name: centos
+    ose-image-name: changeme
+- scm:
+    name: scm-defaults
+    scm:
+      - git:
+          url: 'https://github.com/change/me/'
+          branches:
+           - origin/master
+          skip-tag: true
+
+- project:
+   name: automated-builds
+   jobs:
+    - '{name}-unit-test'
+    - '{name}-refresh-imagestreams'
+    - '{name}-build-image'
+    - '{name}-dockerfile-lint-test'
+    - '{name}-update-jobs-from-yaml'
+#    - time-based or other trigger to scan for image vulerabilities
+#      requires: run from image scan image. how do we access the images or containers?
+#                we want to run on all of the image streams
+#                image-scanner-remote -p localhost -s centos:centos7
+#                curl -X GET localhost:5001/image-scanner/api/test
+#
+#    - functional test of built, running container
+#    - build job triggered by image scan, etc
+#    - teardown job
+#    - tag image based on functional test success
+
+- job-template:
+    name: '{name}-unit-test'
+    description: Run source unit tests
+    builders:
+      - shell: 'make test'
+    publishers:
+    - archive:
+        artifacts: '**/**'
+        allow-empty: 'true'
+    scm:
+      - scm-defaults
+    # triggers: scm poll
+
+- job-template:
+    name: '{name}-refresh-imagestreams'
+    description: Update OpenShift imagestreams to detect upstream image changes
+    builders:
+      - shell: oc login -u {ose-username} -p {ose-password} -n {ose-project-namespace} --insecure-skip-tls-verify={ose-insecure} {ose-uri}
+      - shell: 'oc import-image {ose-imagestream-name}'
+    triggers:
+      - timed: '@hourly'
+
+- job-template:
+    name: '{name}-build-image'
+    description: Start a build in OpenShift
+    builders:
+      - shell: oc login -u {ose-username} -p {ose-password} -n {ose-project-namespace} --insecure-skip-tls-verify={ose-insecure} {ose-uri}
+      - shell: 'oc start-build {ose-image-name}-build'
+    # triggers failed image scan, upstream jobs: unit-test
+
+- job-template:
+    name: '{name}-dockerfile-lint-test'
+    description: Run dockerfile_lint on source
+    scm:
+      - scm-defaults
+    builders:
+      - shell: 'sudo yum install -y npm'
+      - shell: 'sudo npm install git+https://github.com/projectatomic/dockerfile_lint'
+      - shell: 'sudo /root/node_modules/dockerfile_lint/bin/dockerfile_lint -f Dockerfile'
+
+- job-template:
+    name: '{name}-update-jobs-from-yaml'
+    description: >
+        Updates jenkins jobs from the Jenkins Job builder yaml file checked into scm.
+        This job creates or updates other jobs. It's the mother of all jobs.
+    scm:
+      - scm-defaults
+    triggers:
+      - pollscm: "H/30 * * * *"
+    builders:
+        - shell: 'jenkins-jobs --conf config/jenkins-jobs.ini --ignore-cache update -r --delete-old jenkins-jobs.yaml'
+
