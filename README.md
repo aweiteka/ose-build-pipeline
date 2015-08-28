@@ -109,5 +109,5 @@ oc new-app -f myproject.json
 ## Starting Jenkins Master as local image
 
 ```
-sudo docker run -d --name jenkins --privileged -v `pwd`:/root/jjb -p 80:8080 docker-registry.usersys.redhat.com/appinfra-ci/jenkins-master-appinfra
+sudo docker run -d --name jenkins --privileged -v `pwd`:/root/jjb -p 8080:8080 docker-registry.usersys.redhat.com/appinfra-ci/jenkins-master-appinfra
 ```

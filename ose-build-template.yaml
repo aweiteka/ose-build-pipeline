@@ -43,9 +43,6 @@ objects:
       name: "${NAME}-build"
   spec:
     triggers:
-    - type: github
-      github:
-        secret: "${GIT_SECRET}"
     - type: generic
       generic:
         secret: "${GENERIC_SECRET}"
@@ -99,18 +96,12 @@ objects:
     strategy:
       type: Recreate
       recreateParams:
-        pre:
+        post:
           failurePolicy: Abort
           execNewPod:
             command:
             - "/usr/bin/curl"
-            - "-X"
-            - GET
-            - http://jsonplaceholder.typicode.com/posts/1
-            env:
-            - name: FOO
-              value: BAR
-            containerName: "${NAME}"
+            - "http://${JENKINS_HOSTNAME}:${JENKINS_PORT}/job/${IMAGE_SCAN_JOB_NAME}/build?token=${JENKINS_API_TOKEN}"
 - kind: "Service"
   apiVersion: "v1"
   metadata:
@@ -277,6 +268,19 @@ parameters:
 - name: JENKINS_SERVICE_NAME
   description: Jenkins service name
   value: jenkins
+- name: JENKINS_HOSTNAME
+  description: URI of Jenkins master
+  value: http://localhost
+- name: JENKINS_PORT
+  description: Port of Jenkins master
+  value: "8080"
+- name: JENKINS_API_TOKEN
+  description: Jenkins master API token. This will be automatically generated. You'll need to update this value after Jenkins master is running. Either update the OSE deployment config or the Jenkins user configuration.
+  generate: expression
+  from: "[a-f0-9]{32}"
+- name: IMAGE_SCAN_JOB_NAME
+  description: Jenkins image scan job name
+  value: image-scan
 - name: SCANNER_IMAGE
   description: Image scanner docker image
   value: aweiteka/image-scanner
