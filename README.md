@@ -33,7 +33,7 @@ We're using OpenShift all-in-one container deployment method. See [Getting Start
 
 1. Upload the OpenShift template. This will make the template available to instantiate.
 
-        oc create -n test -f https://raw.githubusercontent.com/aweiteka/origin/dev-build-env/examples/dev-build-env/ose-build-template.yaml
+        oc create -n test -f https://raw.githubusercontent.com/aweiteka/ose-pipeline/master/ose-build-template.yaml
 
  In the [OpenShift web interface](https://localhost:8443) create a new instance of the template you uploaded.
 
@@ -96,15 +96,17 @@ Now we're ready to create jobs in the Jenkins master. We'll use Jenkins Job buil
 
         curl -X POST <openshift_webhook_url> [--insecure]
 
-# after test promote image with new tag
-# from jenkins?
-oc tag ${BUILD_IMAGE_NAME}:${BUILD_IMAGE_TAG} ${BUILD_IMAGE_NAME}:<new-tag>
+* after test promote image with new tag (from jenkins?)
 
-# export local OSE resources as template
-oc export all --all -o json --as-template myproject > myproject.json
+        oc tag ${BUILD_IMAGE_NAME}:${BUILD_IMAGE_TAG} ${BUILD_IMAGE_NAME}:<new-tag>
 
-# import on another openshift server
-oc new-app -f myproject.json
+* export local OSE resources as template
+
+        oc export all --all -o json --as-template myproject > myproject.json
+
+* import on another openshift server
+
+    oc new-app -f myproject.json
 
 ## Starting Jenkins Master as local image
 

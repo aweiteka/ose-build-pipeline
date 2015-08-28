@@ -46,12 +46,11 @@ objects:
     - type: generic
       generic:
         secret: "${GENERIC_SECRET}"
-    - type: imageChange
-      imageChange: {}
     source:
       type: Git
       git:
         uri: "${SOURCE_URI}"
+      contextDir: "${BUILD_CONTEXT_DIR}"
     strategy:
       type: Docker
       dockerStrategy:
@@ -78,8 +77,6 @@ objects:
         containers:
         - name: "${NAME}"
           image: "${BUILD_IMAGE_NAME}"
-          args:
-          - "${TEST_CMD}"
     replicas: 1
     selector:
       name: "${NAME}-${BUILD_IMAGE_TAG}-deploy"
@@ -99,6 +96,7 @@ objects:
         post:
           failurePolicy: Abort
           execNewPod:
+            containerName: "${NAME}"
             command:
             - "/usr/bin/curl"
             - "http://${JENKINS_HOSTNAME}:${JENKINS_PORT}/job/${IMAGE_SCAN_JOB_NAME}/build?token=${JENKINS_API_TOKEN}"
@@ -243,6 +241,9 @@ parameters:
   description: Image workflow name
 - name: SOURCE_URI
   description: Git source URI of Dockerfile repository
+- name: BUILD_CONTEXT_DIR
+  description: Optional relative path to Dockerfile in source repository.
+  default:
 - name: BASE_DOCKER_IMAGE
   description: Base docker image from the Dockerfile FROM line. This must be previously
     defined as an image stream.
@@ -254,10 +255,6 @@ parameters:
 - name: BUILD_IMAGE_TAG
   description: The tag of the image after it is built
   value: scratch
-- name: TEST_CMD
-  description: Command to pass into the test container when it is run. In the form
-    of '/usr/bin/command arg1 arg2'
-  value: ''
 - name: JENKINS_IMAGE
   description: Jenkins master docker image
   value: openshift/jenkins-16-centos7
