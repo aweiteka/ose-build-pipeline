@@ -21,6 +21,12 @@ We're using OpenShift all-in-one container deployment method. See [Getting Start
 
         $ oadm registry --credentials=./openshift.local.config/master/openshift-registry.kubeconfig
 
+1. Enable Security Context Constraints (SCC). This is required for image scanning and may not be available in a hosted environment.
+
+        $ oc --config=openshift.local.config/master/openshift-master.kubeconfig create -f https://raw.githubusercontent.com/aweiteka/ose-pipeline/master/scc-admin.yaml
+
+## Using OpenShift
+
 1. Login using default credentials.
 
         $ oc login

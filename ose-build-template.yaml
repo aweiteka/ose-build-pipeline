@@ -5,9 +5,9 @@ metadata:
   name: automated-build
   creationTimestamp:
   annotations:
-    description: An OpenShift v3 template that sets up an automated build pipeline
-      for building docker images from Dockerfile. Assumes the base FROM image has
-      been created as an ImageStream.
+    description: |
+      An OpenShift v3 template that sets up an automated build pipeline
+      to build, test and promote docker images from a Dockerfile.
     provider: aweiteka@redhat.com
 objects:
 - kind: ImageStream
@@ -37,10 +37,10 @@ objects:
 - kind: BuildConfig
   apiVersion: v1
   metadata:
-    name: "${NAME}-build"
+    name: "${NAME}"
     creationTimestamp:
     labels:
-      name: "${NAME}-build"
+      name: "${NAME}"
   spec:
     triggers:
     - type: generic
@@ -67,19 +67,26 @@ objects:
 - kind: DeploymentConfig
   apiVersion: v1
   metadata:
-    name: "${NAME}-scratch-deploy"
+    name: "${NAME}-${BUILD_IMAGE_TAG}"
   spec:
     template:
       metadata:
         labels:
-          name: "${NAME}-${BUILD_IMAGE_TAG}-deploy"
+          name: "${NAME}-${BUILD_IMAGE_TAG}"
       spec:
         containers:
         - name: "${NAME}"
           image: "${BUILD_IMAGE_NAME}"
+          volumeMounts:
+          - name: "${NAME}-scan"
+            mountPath: "/"
+        volumes:
+        - name: "${NAME}-scan"
+          persistentVolumeClaim:
+            claimName: ${NAME}
     replicas: 1
     selector:
-      name: "${NAME}-${BUILD_IMAGE_TAG}-deploy"
+      name: "${NAME}-${BUILD_IMAGE_TAG}"
     triggers:
     - type: imageChange
       imageChangeParams:
@@ -93,13 +100,36 @@ objects:
     strategy:
       type: Recreate
       recreateParams:
-        post:
-          failurePolicy: Abort
-          execNewPod:
-            containerName: "${NAME}"
-            command:
-            - "/usr/bin/curl"
-            - "http://${JENKINS_HOSTNAME}:${JENKINS_PORT}/job/${IMAGE_SCAN_JOB_NAME}/build?token=${JENKINS_API_TOKEN}"
+- kind: "Service"
+  apiVersion: "v1"
+  metadata:
+    name: "${NAME}-${BUILD_IMAGE_TAG}"
+    creationTimestamp: null
+  spec:
+    ports:
+    - name: "test"
+      protocol: "TCP"
+      port: 8000
+      targetPort: 80
+      nodePort: 0
+    selector:
+      name: "${NAME}-${BUILD_IMAGE_TAG}"
+    portalIP: ""
+    type: "ClusterIP"
+    sessionAffinity: "None"
+  status:
+    loadBalancer: {}
+- kind: "PersistentVolumeClaim"
+  apiVersion: "v1"
+  metadata:
+    name: "${NAME}"
+    creationTimestamp: null
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
 - kind: "Service"
   apiVersion: "v1"
   metadata:
@@ -182,71 +212,46 @@ objects:
         containers:
         - name: image-scanner
           image: "${SCANNER_IMAGE}"
-          env:
-          - name: container
-            value: docker
-        securityContext:
-          privileged: true
-        volumeMounts:
-        - name: proc
-          mountPath: /hostproc/
-        - name: cgroup
-          mountPath: /sys/fs/cgroup
-        - name: run
-          mountPath: run
-        - name: devmapper
-          mountPath: /var/lib/docker/devicemapper/metadata/
-        - name: dev
-          mountPath: /dev
-      volumes:
-      - name: proc
-        hostPath:
-          path: /proc/
-      - name: cgroup
-        hostPath:
-          path: /sys/fs/cgroup
-      - name: run
-        hostPath:
-          path: /run
-      - name: devmapper
-        hostPath:
-          path: /var/lib/docker/devicemapper/metadata/
-      - name: dev
-        hostPath:
-          path: /dev
+          volumeMounts:
+          - name: scan-container-contents
+            mountPath: /container-contents
+        volumes:
+        - name: scan-container-contents
+          persistentVolumeClaim:
+            claimName: ${NAME}
     replicas: 1
     selector:
       name: image-scanner
-- kind: Service
-  apiVersion: v1
-  metadata:
-    name: image-scanner
-    creationTimestamp: null
-  spec:
-    ports:
-    - name: image-scanner
-      protocol: TCP
-      port: 5000
-      targetPort: 5000
-    selector:
-      name: image-scanner
-    portalIP: ""
-    type: ClusterIP
-    sessionAffinity: None
-  status:
-    loadBalancer: {}
+#- kind: Service
+#  apiVersion: v1
+#  metadata:
+#    name: image-scanner
+#    creationTimestamp: null
+#  spec:
+#    ports:
+#    - name: image-scanner
+#      protocol: TCP
+#      port: 8080
+#      targetPort: 8080
+#    selector:
+#      name: image-scanner
+#    portalIP: ""
+#    type: ClusterIP
+#    sessionAffinity: None
+#  status:
+#    loadBalancer: {}
 
 parameters:
 - name: NAME
-  description: Image workflow name
+  description: |
+    Image workflow name. This will be used to identify the resources.
 - name: SOURCE_URI
   description: Git source URI of Dockerfile repository
 - name: BUILD_CONTEXT_DIR
   description: Optional relative path to Dockerfile in source repository.
   default:
 - name: BASE_DOCKER_IMAGE
-  description: Base docker image from the Dockerfile FROM line. This must be previously
-    defined as an image stream.
+  description: Base docker image from the Dockerfile FROM line.
 - name: BASE_DOCKER_IMAGE_TAG
   description: Base docker image tag from the Dockerfile FROM line.
   value: latest
@@ -254,7 +259,7 @@ parameters:
   description: The name of the image after it is built, not including :<tag>
 - name: BUILD_IMAGE_TAG
   description: The tag of the image after it is built
-  value: scratch
+  value: test
 - name: JENKINS_IMAGE
   description: Jenkins master docker image
   value: openshift/jenkins-16-centos7
@@ -271,10 +276,6 @@ parameters:
 - name: JENKINS_PORT
   description: Port of Jenkins master
   value: "8080"
-- name: JENKINS_API_TOKEN
-  description: Jenkins master API token. This will be automatically generated. You'll need to update this value after Jenkins master is running. Either update the OSE deployment config or the Jenkins user configuration.
-  generate: expression
-  from: "[a-f0-9]{32}"
 - name: IMAGE_SCAN_JOB_NAME
   description: Jenkins image scan job name
   value: image-scan
