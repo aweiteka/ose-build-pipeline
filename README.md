@@ -62,28 +62,24 @@ When the Jenkins master is deployed we need to get the service IP address and po
 
 Now we're ready to create jobs in the Jenkins master. We'll use Jenkins Job builder to define the jobs then render them using a CLI tool.
 
-1. Copy the Jenkins Job Builder template to your source repository and edit.
-1. Get the Jenkins pod name
+1. Copy the Jenkins Job Builder template and config directory to your source repository and edit. The directory should look something like this.
 
-        oc get pods
-
-1. Enter the jenkins container. We'll do this once to gain access to the jenkins-jobs CLI.
-
-        oc exec -it <jenkins_pod_name> bash
+        ├── config
+        │   └── jenkins-jobs.ini
+        ├── Dockerfile
+        ├── ...
+        └── jenkins-jobs.yaml
 
 1. Edit the jenkins-jobs config file `config/jenkins-jobs.ini` changing the jenkins master service IP address.
-1. Add plugins (TODO: bundle these in jenkins master plugin)
-  1. In the jenkins master web UI navigate to "manage jenkins" > "Jenkins Plugins" > "Available" tab
-  1. Select "git plugin", "git client plugin", "URL SCM plugin", "Poll SCM plugin", "Clone Workspace SCM Plug-in"
-1. Run `jenkins-jobs` (TODO: provide jenkins-jobs tool or a way to exec into the jenkins master) to create a whole pile of jenkins jobs.
+1. Run the Jenkins Job Builder tool to upload jobs to the Jenkins master. Run the container from the same directory of the `jenkins-jobs.yaml` file.
 
-        jenkins-jobs --conf config/jenkins-jobs.ini --ignore-cache update jenkins-jobs.yaml
+        sudo atomic run aweiteka/jjb
 
+1. Each time you want to make a change to a job, run this tool again to update the changes in the Jenkins master.
 1. Using a browser load the Jenkins web UI using the Jenkins service IP address and port. Default credentials are admin/password.
 
 
 ## Notes
-
 
 * Upload template for all OpenShift users. As OpenShift admin upload template for all users and projects.
 
