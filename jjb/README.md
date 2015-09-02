@@ -6,10 +6,10 @@ Jenkins Job Builder is a tool to manage Jenkins Jobs using a YAML or JSON syntax
 
 1. From the directory with a `jenkins-jobs.yaml` file and a configuration file in `config/jenkins-jobs.ini` run this command to upload Jenkins jobs to a Jenkins master.
 
-        [sudo] atomic run aweiteka/jjb
+        [sudo] atomic run aweiteka/jenkins-job-builder
 
 If you do not have the atomic command or need to run the image in a different way use straight docker and customize as needed:
 
 ```
-docker run -it --rm -v `pwd`:/jjb:Z --net=host aweiteka/jjb
+docker run -it --rm -v `pwd`:/jjb:Z --net=host aweiteka/jenkins-job-builder
 ```
