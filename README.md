@@ -73,7 +73,7 @@ Now we're ready to create jobs in the Jenkins master. We'll use Jenkins Job buil
 1. Edit the jenkins-jobs config file `config/jenkins-jobs.ini` changing the jenkins master service IP address.
 1. Run the Jenkins Job Builder tool to upload jobs to the Jenkins master. Run the container from the same directory of the `jenkins-jobs.yaml` file.
 
-        sudo atomic run aweiteka/jjb
+        sudo atomic run aweiteka/jenkins-job-builder
 
 1. Each time you want to make a change to a job, run this tool again to update the changes in the Jenkins master.
 1. Using a browser load the Jenkins web UI using the Jenkins service IP address and port. Default credentials are admin/password.
@@ -108,10 +108,15 @@ Now we're ready to create jobs in the Jenkins master. We'll use Jenkins Job buil
 
 * import on another openshift server
 
-    oc new-app -f myproject.json
+        oc new-app -f myproject.json
+
+* Image scanning. Assumes image contents in `/tmp/image-content`
+
+        export OSCAP_PROBE_ROOT=/tmp/image-content
+        sudo oscap oval eval --report /tmp/oscap.html --results /tmp/oscap.xml http://www.redhat.com/security/data/oval/Red_Hat_Enterprise_Linux_7.xml
 
 ## Starting Jenkins Master as local image
 
 ```
-sudo docker run -d --name jenkins --privileged -v `pwd`:/root/jjb -p 8080:8080 docker-registry.usersys.redhat.com/appinfra-ci/jenkins-master-appinfra
+sudo docker run -d --name jenkins -p 8080:8080 docker-registry.usersys.redhat.com/appinfra-ci/jenkins-master-appinfra
 ```
