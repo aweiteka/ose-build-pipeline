@@ -23,7 +23,7 @@ We're using OpenShift all-in-one container deployment method. See [Getting Start
 
 1. Enable Security Context Constraints (SCC). This is required for image scanning and may not be available in a hosted environment.
 
-        $ oc --config=openshift.local.config/master/openshift-master.kubeconfig create -f https://raw.githubusercontent.com/aweiteka/ose-pipeline/master/scc-admin.yaml
+        $ oc --config=openshift.local.config/master/openshift-master.kubeconfig create -f https://raw.githubusercontent.com/aweiteka/ose-build-pipeline/master/scc-admin.yaml
 
 ## Using OpenShift
 
@@ -39,9 +39,9 @@ We're using OpenShift all-in-one container deployment method. See [Getting Start
 
 1. Upload the OpenShift template. This will make the template available to instantiate.
 
-        oc create -n test -f https://raw.githubusercontent.com/aweiteka/ose-pipeline/master/ose-build-template.yaml
+        oc create -n test -f https://raw.githubusercontent.com/aweiteka/ose-build-pipeline/master/ose-build-template.yaml
 
- In the [OpenShift web interface](https://localhost:8443) create a new instance of the template you uploaded.
+ In the [OpenShift web interface](https://<host_ip_address>:8443) create a new instance of the template you uploaded.
 
 1. Login with credentials test/test
 1. Select "test" project
@@ -76,7 +76,7 @@ Now we're ready to create jobs in the Jenkins master. We'll use Jenkins Job buil
         sudo atomic run aweiteka/jenkins-job-builder
 
 1. Each time you want to make a change to a job, run this tool again to update the changes in the Jenkins master.
-1. Using a browser load the Jenkins web UI using the Jenkins service IP address and port. Default credentials are admin/password.
+1. Using a browser load the Jenkins web UI using the Jenkins service IP address and port. Default credentials are admin/password if you did not change them during the template deployment.
 
 
 ## Notes
