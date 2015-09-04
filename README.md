@@ -21,10 +21,6 @@ We're using OpenShift all-in-one container deployment method. See [Getting Start
 
         $ oadm registry --credentials=./openshift.local.config/master/openshift-registry.kubeconfig
 
-1. Enable Security Context Constraints (SCC). This is required for image scanning and may not be available in a hosted environment.
-
-        $ oc --config=openshift.local.config/master/openshift-master.kubeconfig create -f https://raw.githubusercontent.com/aweiteka/ose-build-pipeline/master/scc-admin.yaml
-
 ## Using OpenShift
 
 1. Login using default credentials.
@@ -36,6 +32,10 @@ We're using OpenShift all-in-one container deployment method. See [Getting Start
 1. Create a project
 
         $ oc new-project test
+
+1. Add the `edit` role to the `default` service account in the `test` project. This is so Jenkins can access the OpenShift environment using a service account token.
+
+        $ oc policy add-role-to-user edit system:serviceaccount:test:default
 
 1. Upload the OpenShift template. This will make the template available to instantiate.
 
