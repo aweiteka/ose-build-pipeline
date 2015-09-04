@@ -1,97 +1,213 @@
+###
+# This is a Jenkins Job builder template for creating jenkins jobs.
+# It is not a Jenkins plugin. It is a CLI tool that parses a yaml file
+# and uploads job XML to a jenkins server. It allows jenkins jobs to be
+# developed outside of the Jenkins web UI and kept under version control.
+# Documentation: http://docs.openstack.org/infra/jenkins-job-builder/
+#
+# 1. Place a copy of this file and the config directory to your source repository
+# 2. Edit the global parameters and config/jenkins-jobs.ini file
+# 3. Run jenkins-jobs CLI to upload XML to your jenkins master
+#    jenkins-jobs --conf config/jenkins-jobs.ini --ignore-cache update jenkins-jobs.yaml
+# 4. Once you're satisfied, commit and push. jenkins-jobs will be run each time the repo changes
+###
+
+###
+# Edit these values for your project.
+###
 - defaults:
     name: global
-    mail-to: aweiteka@redhat.com
+    mail-to: me@example.com
     description: >
         A jenkins-jobs template to create jobs in Jenkins.
-        Do not edit this job through the web.
-    # use IP addr or hostname
-    ose-uri: localhost
+        Do not edit this job through the web user interface.
+    ose-uri: https://localhost:8443
     ose-username: test
     ose-password: test
     ose-insecure: true
-    # use secret token per steps 3 and 9 (confirm)
-    # https://github.com/openshift/origin/blob/master/examples/jenkins/README.md
-    #ose-api-auth-token: <token>
     ose-project-namespace: test
-    ose-imagestream-name: centos
-    ose-image-name: changeme
+    ose-token-file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    ose-imagestream-name: some/image
+    ose-image-name: acmeapp
+    context-dir: path/to/dockerfile/dir
+    oc-cmd: oc -n {ose-project-namespace} --token=`cat {ose-token-file}` --insecure-skip-tls-verify={ose-insecure} --server={ose-uri}
+# If you have more than once source repository copy the scm section
+# edit and use the name value to use it in your job
 - scm:
-    name: scm-defaults
+    name: dockerfile
     scm:
       - git:
-          url: 'https://github.com/change/me/'
+          url: 'https://github.com/some/project.git'
           branches:
            - origin/master
           skip-tag: true
+          git-config-name: Your Name
+          git-config-email: {mail-to}
+
+###
+# End edit values
+###
 
 - project:
    name: automated-builds
    jobs:
-    - '{name}-unit-test'
-    - '{name}-refresh-imagestreams'
-    - '{name}-build-image'
-    - '{name}-dockerfile-lint-test'
-    - '{name}-update-jobs-from-yaml'
-#    - time-based or other trigger to scan for image vulerabilities
-#      requires: run from image scan image. how do we access the images or containers?
-#                we want to run on all of the image streams
-#                image-scanner-remote -p localhost -s centos:centos7
-#                curl -X GET localhost:5001/image-scanner/api/test
-#
-#    - functional test of built, running container
-#    - build job triggered by image scan, etc
-#    - teardown job
-#    - tag image based on functional test success
+    # update this list if you add or remove a job-template
+    #- 'unit-test'
+    - 'image-scan'
+    - 'dockerfile-lint-test'
+    - 'build-image'
+    - 'functional-test'
+    - 'tag-release-image'
+    #- 'submit-certification'
+    - 'refresh-imagestreams'
+    - 'update-jobs-from-yaml'
 
 - job-template:
-    name: '{name}-unit-test'
-    description: Run source unit tests
+    name: 'unit-test'
+    description: "OPTIONAL: Run source unit tests"
+    scm:
+      - dockerfile
     builders:
       - shell: 'make test'
     publishers:
     - archive:
         artifacts: '**/**'
         allow-empty: 'true'
-    scm:
-      - scm-defaults
-    # triggers: scm poll
 
 - job-template:
-    name: '{name}-refresh-imagestreams'
+    name: 'functional-test'
+    description: Deploy container and run functional tests
+    scm:
+      - dockerfile
+    builders:
+      - shell: |
+          #!/bin/bash -x
+
+          # WORK IN PROGRESS
+          DEPLOYMENT=$({oc-cmd} deploy {ose-image-name} --latest)
+          echo $DEPLOYMENT
+          {oc-cmd} get pods -l name={ose-image-name} -o template -t '{{ $a:=index .items 0 }}{{ $a.metadata.name }}'
+
+    publishers:
+    - archive:
+        artifacts: '**/**'
+        allow-empty: 'true'
+
+###
+# Service jobs
+# You typically will not need to edit anything below
+###
+
+- job-template:
+    name: 'refresh-imagestreams'
     description: Update OpenShift imagestreams to detect upstream image changes
     builders:
-      - shell: oc login -u {ose-username} -p {ose-password} -n {ose-project-namespace} --insecure-skip-tls-verify={ose-insecure} {ose-uri}
-      - shell: 'oc import-image {ose-imagestream-name}'
+      - shell: '{oc-cmd} import-image {ose-imagestream-name}'
+    triggers:
+      - timed: '@hourly'
+    publishers:
+      - trigger-parameterized-builds:
+          - project: 'build-image'
+            current-parameters: true
+            condition: 'UNSTABLE_OR_WORSE'
+
+- job-template:
+    name: 'build-image'
+    description: Start a build in OpenShift
+    scm:
+      - dockerfile
+    triggers:
+      # run job if repo changes or if the image-scan job fails
+      - pollscm: "H/5 * * * *"
+    builders:
+      - shell: |
+          #!/bin/bash
+
+          ###
+          # kicking off the build exits immediately
+          # we follow the logs but the log tail succeeds even if the build fails
+          # grab the success-fail of the actual build
+          ###
+
+          BUILD=$({oc-cmd} start-build {ose-image-name})
+          sleep 5
+          {oc-cmd} build-logs $BUILD -f
+          # escape brackets with yet another bracket for jjb compatibility
+          BUILD_STATUS=$({oc-cmd} get builds $BUILD -o template -t {{{{.status.phase}}}})
+          count=1
+          attempts=10
+          while [ $BUILD_STATUS == "Running" -a $count -lt $attempts ]; do
+            echo "Waiting for build status ('$BUILD_STATUS') to complete, attempt $count/$attempts"
+            sleep 5
+            BUILD_STATUS=$({oc-cmd} get builds $BUILD -o template -t {{{{.status.phase}}}})
+            if [[ $BUILD_STATUS == "Failed" ]]; then
+              {oc-cmd} get builds $BUILD -o yaml
+              echo "Build status: $BUILD_STATUS"
+              exit 1
+            elif [[ $BUILD_STATUS == "Success" ]]; then
+              echo "Build status: $BUILD_STATUS"
+              exit 0
+            fi
+            count=$(($count+1))
+
+          done
+          echo "Build status: $BUILD_STATUS"
+          echo "Build has timed out, attempt $count/$attempts."
+          exit 1
+    publishers:
+      - trigger-parameterized-builds:
+          - project: 'functional-test'
+            current-parameters: true
+            condition: 'SUCCESS'
+
+- job-template:
+    name: 'image-scan'
+    description: Placeholder job to scan image for vulnerabilities FIXME
+    builders:
+      - shell: exit 1
+      - trigger-builds:
+        - project: "build-image"
+          current-parameters: true
     triggers:
       - timed: '@hourly'
 
 - job-template:
-    name: '{name}-build-image'
-    description: Start a build in OpenShift
-    builders:
-      - shell: oc login -u {ose-username} -p {ose-password} -n {ose-project-namespace} --insecure-skip-tls-verify={ose-insecure} {ose-uri}
-      - shell: 'oc start-build {ose-image-name}-build'
-    # triggers failed image scan, upstream jobs: unit-test
-
-- job-template:
-    name: '{name}-dockerfile-lint-test'
-    description: Run dockerfile_lint on source
+    name: 'dockerfile-lint-test'
+    description: Check Dockerfile using dockerfile_lint tool
     scm:
-      - scm-defaults
+      - dockerfile
+    triggers:
+      - pollscm: "H/5 * * * *"
     builders:
+      # TODO: we need to run this in an image or enable sudo in jenkins master
       - shell: 'sudo yum install -y npm'
-      - shell: 'sudo npm install git+https://github.com/projectatomic/dockerfile_lint'
-      - shell: 'sudo /root/node_modules/dockerfile_lint/bin/dockerfile_lint -f Dockerfile'
+      - shell: 'npm install git+https://github.com/projectatomic/dockerfile_lint'
+      - shell: './node_modules/dockerfile_lint/bin/dockerfile_lint -f {context-dir}/Dockerfile'
+      - trigger-builds:
+        - project: "build-image"
+          current-parameters: true
 
 - job-template:
-    name: '{name}-update-jobs-from-yaml'
+    name: 'tag-release-image'
+    description: "Release image by tag"
+    parameters:
+      - string:
+          name: TAG
+          description: "Tag for image release"
+    builders:
+      - shell: echo "TODO use TAG param"
+      #- shell: {oc-cmd} tag {ose-image-name}:{ose-image-tag-major-version}-{ose-image-tag-build-number} {ose-image-name}:{ose-image-tag-major-version}-`expr {ose-image-tag-build-number} + {ose-image-tag-increment}`
+
+- job-template:
+    name: 'update-jobs-from-yaml'
     description: >
         Updates jenkins jobs from the Jenkins Job builder yaml file checked into scm.
         This job creates or updates other jobs. It's the mother of all jobs.
     scm:
-      - scm-defaults
+      - dockerfile
     triggers:
-      - pollscm: "H/30 * * * *"
+      - pollscm: "H/15 * * * *"
+    disabled: true
     builders:
-        - shell: 'jenkins-jobs --conf config/jenkins-jobs.ini --ignore-cache update -r --delete-old jenkins-jobs.yaml'
+        - shell: 'jenkins-jobs --conf {context-dir}/config/jenkins-jobs.ini --ignore-cache update -r {context-dir}/jenkins-jobs.yaml'
 
