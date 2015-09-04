@@ -23,17 +23,17 @@ objects:
         Name: "${BUILD_IMAGE_TAG}"
   status:
     dockerImageRepository: ''
-- kind: ImageStream
-  apiVersion: v1
-  metadata:
-    annotations:
-      openshift.io/image.dockerRepositoryCheck: 2015-08-24T14:21:58Z
-    creationTimestamp: null
-    name: "${BASE_DOCKER_IMAGE}"
-  spec:
-    dockerImageRepository: "${BASE_DOCKER_IMAGE}"
-  status:
-    dockerImageRepository: ""
+#- kind: ImageStream
+#  apiVersion: v1
+#  metadata:
+#    annotations:
+#      openshift.io/image.dockerRepositoryCheck: 2015-08-24T14:21:58Z
+#    creationTimestamp: null
+#    name: "${BASE_DOCKER_IMAGE}"
+#  spec:
+#    dockerImageRepository: "${BASE_DOCKER_IMAGE}"
+#  status:
+#    dockerImageRepository: ""
 - kind: BuildConfig
   apiVersion: v1
   metadata:
@@ -270,12 +270,6 @@ parameters:
 - name: JENKINS_SERVICE_NAME
   description: Jenkins service name
   value: jenkins
-- name: JENKINS_HOSTNAME
-  description: URI of Jenkins master
-  value: http://localhost
-- name: JENKINS_PORT
-  description: Port of Jenkins master
-  value: "8080"
 - name: IMAGE_SCAN_JOB_NAME
   description: Jenkins image scan job name
   value: image-scan
