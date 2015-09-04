@@ -1,6 +1,6 @@
-# OpenShift Image Pipeline
+# OpenShift Image Build Pipeline
 
-A container image automated pipline based on OpenShift V3 and Jenkins to build, deploy, test, promote, certify and publish
+A container image automated build pipline based on OpenShift V3 and Jenkins to build, deploy, test, promote, certify and publish
 
 ## Local Development setup
 

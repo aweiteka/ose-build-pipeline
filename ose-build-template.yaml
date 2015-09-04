@@ -262,7 +262,7 @@ parameters:
   value: test
 - name: JENKINS_IMAGE
   description: Jenkins master docker image
-  value: openshift/jenkins-16-centos7
+  value: aweiteka/ose-jenkins-master
 - name: JENKINS_PASSWORD
   description: Password for the Jenkins user
   generate: expression
