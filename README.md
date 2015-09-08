@@ -2,6 +2,16 @@
 
 A container image automated build pipline based on OpenShift V3 and Jenkins to build, deploy, test, promote, certify and publish
 
+![CI workflow](docs/images/ci-workflow.png)
+
+1. A new build may be triggered by a source control change, a failed image scan, an upstream (FROM) image change or manually. A Dockerfile lint test is run before the build begins and may optionally gate the build.
+1. New image is pushed to internal OpenShift registry. Image tagged with incremented build number.
+1. Image is deployed for testing. Single-image functional testing is performed. Deployment is scanned periodically for vulnerabilities. If scan fails a new build is triggered.
+1. An optional integration test phase of dependent images or services. Integration deployment may be a vm-based platform such as Atomic Enterprise.
+1. Automation is gated on manual tagging for release. The tag release job triggers certification and publication.
+1. Submit for certification.
+1. Publish to public registry. Image is available pull using new release tag.
+
 ## Local Development setup
 
 We're using OpenShift all-in-one container deployment method. See [Getting Started](https://github.com/openshift/origin/#getting-started) instructions.
