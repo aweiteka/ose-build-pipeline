@@ -47,9 +47,9 @@ We're using OpenShift all-in-one container deployment method. See [Getting Start
 
         $ oc policy add-role-to-user edit system:serviceaccount:test:default
 
-1. Upload the OpenShift template. This will make the template available to instantiate.
+1. Upload the OpenShift template. This will make the template available to instantiate from your project namespace.
 
-        oc create -n test -f https://raw.githubusercontent.com/aweiteka/ose-build-pipeline/master/ose-build-template.yaml
+        oc create -f https://raw.githubusercontent.com/aweiteka/ose-build-pipeline/master/ose-build-template.yaml
 
  In the [OpenShift web interface](https://<host_ip_address>:8443) create a new instance of the template you uploaded.
 
