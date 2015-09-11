@@ -88,6 +88,42 @@ Now we're ready to create jobs in the Jenkins master. We'll use Jenkins Job buil
 1. Each time you want to make a change to a job, run this tool again to update the changes in the Jenkins master.
 1. Using a browser load the Jenkins web UI using the Jenkins service IP address and port. Default credentials are admin/password if you did not change them during the template deployment.
 
+## Migrating to Hosted OpenShift
+
+When you have everything working you'll want to migrate your project to a hosted OpenShift server.
+
+Export your template. We're exporting all resources as template. TODO: we need this template locally.
+
+    oc export all --all -o json --as-template myproject > myproject.json
+
+We'll use the OpenShift container image interactively to login to the hosted (non-local) OpenShift server. You'll need the URL of the OpenShift server.
+
+1. Enter the openshift/origin container image.
+
+        sudo docker run -it --name origin --entrypoint bash openshift/origin
+
+1. Try to login.
+
+        oc login https://<openshift_console_url>
+
+1. You'll get a 404 login error, instructing you to get an API token first. Visit the URL and copy the login command with the token.
+
+        oc login --token=<token> --server=https://<openshift_api_url>
+
+If you exit the container shell you can re-enter by starting it in interactive mode and continue your work.
+
+    sudo docker start -i origin
+
+Update your Jenkins endpoint so you can upload the jenkins jobs to the new jenkins server.
+
+1. Get the Jenkins master URL:
+
+        oc get route jenkins
+
+1. Update `config/jenkins-jobs.ini` file with the URL from step 1.
+1. Upload the jobs
+
+        sudo atomic run aweiteka/jenkins-job-builder
 
 ## Notes
 
@@ -112,10 +148,6 @@ Now we're ready to create jobs in the Jenkins master. We'll use Jenkins Job buil
 
         oc tag ${BUILD_IMAGE_NAME}:${BUILD_IMAGE_TAG} ${BUILD_IMAGE_NAME}:<new-tag>
 
-* export local OSE resources as template
-
-        oc export all --all -o json --as-template myproject > myproject.json
-
 * import on another openshift server
 
         oc new-app -f myproject.json
@@ -124,6 +156,14 @@ Now we're ready to create jobs in the Jenkins master. We'll use Jenkins Job buil
 
         export OSCAP_PROBE_ROOT=/tmp/image-content
         sudo oscap oval eval --report /tmp/oscap.html --results /tmp/oscap.xml http://www.redhat.com/security/data/oval/Red_Hat_Enterprise_Linux_7.xml
+
+* Inspect image
+
+        oc get istag <imagestream>:<tag> -o yaml
+
+* Get image labels
+
+        oc get istag centos:centos7 -o template -t {{.image.dockerImageMetadata.ContainerConfig.Labels}}
 
 ## Starting Jenkins Master as local image
 
