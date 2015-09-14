@@ -50,6 +50,7 @@ objects:
       type: Git
       git:
         uri: "${SOURCE_URI}"
+        ref: "${BUILD_REF}"
       contextDir: "${BUILD_CONTEXT_DIR}"
     strategy:
       type: Docker
@@ -245,6 +246,9 @@ parameters:
 - name: BUILD_CONTEXT_DIR
   description: Optional relative path to Dockerfile in source repository.
   default:
+- name: BUILD_REF
+  description: Optional git branch or tag
+  default: master
 - name: BASE_DOCKER_IMAGE
   description: Base docker image from the Dockerfile FROM line.
 - name: BASE_DOCKER_IMAGE_TAG
