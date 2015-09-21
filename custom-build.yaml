@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Template
+metadata:
+  creationTimestamp: null
+  name: custom-promote
+objects:
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      description: Custom build to promote image from one registry to another
+    creationTimestamp: null
+    labels:
+      name: custom-promote
+      template: custom-promote-template
+    name: custom-promote
+  spec:
+    output:
+      to:
+        kind: ImageStreamTag
+        name: jenkins-master:promote
+    resources: {}
+    source:
+      git:
+        uri: https://github.com/mfojtik/jenkins-ci.git
+      type: Git
+    strategy:
+      customStrategy:
+        from:
+          kind: DockerImage
+          name: aweiteka/ose-custom-push
+        env:
+          - name: PULL_REGISTRY
+            value: ${PULL_REGISTRY}
+          - name: PULL_IMAGE
+            value: ${PULL_IMAGE}
+          - name: PUSH_REGISTRY
+            value: ${PUSH_REGISTRY}
+        exposeDockerSocket: true
+      type: Custom
+    triggers:
+    - imageChange: {}
+      type: ImageChange
+  status:
+    lastVersion: 0
+parameters:
+- name: PULL_REGISTRY
+- name: PULL_IMAGE
+- name: PUSH_REGISTRY
