@@ -165,8 +165,20 @@ Update your Jenkins endpoint so you can upload the jenkins jobs to the new jenki
 
         oc get istag centos:centos7 -o template -t {{.image.dockerImageMetadata.ContainerConfig.Labels}}
 
+* Dockerfile lint remote Dockerfile
+
+        docker run -it --rm projectatomic/dockerfile-lint bash -c 'git clone https://github.com/projectatomic/atomicapp.git && dockerfile_lint -f atomicapp/Dockerfile'
+
 ## Starting Jenkins Master as local image
 
 ```
 sudo docker run -d --name jenkins -p 8080:8080 docker-registry.usersys.redhat.com/appinfra-ci/jenkins-master-appinfra
 ```
+
+## Troubleshooting
+
+1. "My image won't run on OpenShift."
+
+    Is it running as root? OpenShift will not allow running as root. You may need to update your image. See ["Support arbitrary user ids"](https://access.redhat.com/documentation/en/openshift-enterprise/version-3.0/openshift-enterprise-30-creating-images/chapter-1-guidelines).
+
+
