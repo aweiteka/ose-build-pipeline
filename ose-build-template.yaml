@@ -65,6 +65,42 @@ objects:
     resources: {}
   status:
     lastVersion: 0
+- kind: BuildConfig
+  apiVersion: v1
+  metadata:
+    creationTimestamp: null
+    labels:
+      name: "${NAME}"
+    name: custom-build-promote
+  spec:
+    output:
+      to:
+        kind: ImageStreamTag
+        name: "${BUILD_IMAGE_NAME}:${BUILD_IMAGE_TAG}"
+    resources: {}
+    source:
+      git:
+        uri: "${SOURCE_URI}"
+      type: Git
+    strategy:
+      customStrategy:
+        from:
+          kind: DockerImage
+          name: aweiteka/ose-custom-push
+        env:
+          - name: PULL_REGISTRY
+            value: ${PULL_REGISTRY}
+          - name: PULL_IMAGE
+            value: ${PULL_IMAGE}
+          - name: PUSH_REGISTRY
+            value: ${PUSH_REGISTRY}
+        exposeDockerSocket: true
+      type: Custom
+    triggers:
+    - imageChange: {}
+      type: ImageChange
+  status:
+    lastVersion: 0
 - kind: DeploymentConfig
   apiVersion: v1
   metadata:
@@ -131,70 +167,6 @@ objects:
     resources:
       requests:
         storage: 1Gi
-- kind: "Service"
-  apiVersion: "v1"
-  metadata:
-    name: "${JENKINS_SERVICE_NAME}"
-    creationTimestamp: null
-  spec:
-    ports:
-    - name: "web"
-      protocol: "TCP"
-      port: 8080
-      targetPort: 8080
-      nodePort: 0
-    selector:
-      name: "${JENKINS_SERVICE_NAME}"
-    portalIP: ""
-    type: "ClusterIP"
-    sessionAffinity: "None"
-  status:
-    loadBalancer: {}
-- kind: "Route"
-  apiVersion: "v1"
-  metadata:
-    name: "jenkins"
-    creationTimestamp: null
-  spec:
-    to:
-      kind: "Service"
-      name: "${JENKINS_SERVICE_NAME}"
-- kind: "DeploymentConfig"
-  apiVersion: "v1"
-  metadata:
-    name: "${JENKINS_SERVICE_NAME}"
-    creationTimestamp: null
-  spec:
-    strategy:
-      type: "Recreate"
-      resources: {}
-    triggers:
-    - type: "ConfigChange"
-    replicas: 1
-    selector:
-      name: "${JENKINS_SERVICE_NAME}"
-    template:
-      metadata:
-        creationTimestamp: null
-        labels:
-          name: "${JENKINS_SERVICE_NAME}"
-      spec:
-        containers:
-        - name: "jenkins"
-          image: "${JENKINS_IMAGE}"
-          env:
-          - name: "JENKINS_PASSWORD"
-            value: "${JENKINS_PASSWORD}"
-          resources: {}
-          terminationMessagePath: "/dev/termination-log"
-          imagePullPolicy: "IfNotPresent"
-          capabilities: {}
-          securityContext:
-          capabilities: {}
-          privileged: false
-        restartPolicy: "Always"
-        dnsPolicy: "ClusterFirst"
-      status: {}
 - kind: DeploymentConfig
   apiVersion: v1
   metadata:
@@ -259,16 +231,12 @@ parameters:
 - name: BUILD_IMAGE_TAG
   description: The tag of the image after it is built
   value: test
-- name: JENKINS_IMAGE
-  description: Jenkins master docker image
-  value: aweiteka/ose-jenkins-master
-- name: JENKINS_PASSWORD
-  description: Password for the Jenkins user
-  generate: expression
-  value: password
-- name: JENKINS_SERVICE_NAME
-  description: Jenkins service name
-  value: jenkins
+- name: PULL_REGISTRY
+  description: When promoting, the internal openshift registry
+- name: PULL_IMAGE
+  description: When promoting, the image name
+- name: PUSH_REGISTRY
+  description: When promoting, the URL of the registry to push to
 - name: IMAGE_SCAN_JOB_NAME
   description: Jenkins image scan job name
   value: image-scan
