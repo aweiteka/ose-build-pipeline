@@ -23,5 +23,5 @@ LABEL RUN="docker run -it --rm -v `pwd`:/jjb:Z --net=host --name NAME -e NAME=NA
 
 ENTRYPOINT ["/usr/bin/jenkins-jobs"]
 CMD ["--conf", "config/jenkins-jobs.ini", "--ignore-cache", \
-     "update", "--delete-old", "jenkins-jobs.yaml"]
+     "update", "jenkins-jobs.yaml"]
 
