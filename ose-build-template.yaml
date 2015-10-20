@@ -29,9 +29,6 @@ parameters:
 - name: BUILD_IMAGE_TAG
   description: The tag of the image after it is built
   value: latest
-- name: BUILD_IMAGE_PORT
-  description: The service port exposed for image testing
-  value: 8080
 - name: PULL_REGISTRY
   description: When promoting, the internal openshift registry. If not known this can be updated later with 'oc edit bc promote-image-custom-build'
   value: ""
@@ -122,7 +119,28 @@ objects:
   apiVersion: v1
   metadata:
     name: "${BUILD_IMAGE_NAME}"
+    creationTimestamp: null
   spec:
+    strategy:
+      type: Recreate
+      resources: {}
+    triggers:
+    - type: imageChange
+      imageChangeParams:
+        automatic: true
+        containerNames:
+          - ${BUILD_IMAGE_NAME}
+        from:
+          kind: ImageStreamTag
+          name: "${BUILD_IMAGE_NAME}:${BUILD_IMAGE_TAG}"
+        lastTriggeredImage: ""
+    - type: generic
+      generic:
+        secret: "${GENERIC_SECRET}"
+    - type: ConfigChange
+    replicas: 1
+    selector:
+      name: "${BUILD_IMAGE_NAME}"
     template:
       metadata:
         labels:
@@ -133,43 +151,28 @@ objects:
           image: "${BUILD_IMAGE_NAME}"
           terminationMessagePath: /dev/termination-log
           imagePullPolicy: IfNotPresent
+          securityContext:
+            capabilities: {}
+            privileged: false
         restartPolicy: Always
         dnsPolicy: ClusterFirst
-    replicas: 1
-    selector:
-      name: "${BUILD_IMAGE_NAME}"
-    triggers:
-    - type: imageChange
-      imageChangeParams:
-        automatic: true
-        containerNames:
-          - ${BUILD_IMAGE_NAME}
-        from:
-          kind: ImageStreamTag
-          name: "${BUILD_IMAGE_NAME}:${BUILD_IMAGE_TAG}"
-    - type: generic
-      generic:
-        secret: "${GENERIC_SECRET}"
-    strategy:
-      type: Recreate
-      resources: {}
 - kind: "Service"
   apiVersion: "v1"
   metadata:
-    name: "${BUILD_IMAGE_NAME}"
+    name: ${BUILD_IMAGE_NAME}
     creationTimestamp: null
   spec:
     ports:
-    - name: "test"
-      protocol: "TCP"
-      port: ${BUILD_IMAGE_PORT}
-      targetPort: ${BUILD_IMAGE_PORT}
+    - name: ${BUILD_IMAGE_NAME}
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
       nodePort: 0
     selector:
-      name: "${BUILD_IMAGE_NAME}"
+      name: ${BUILD_IMAGE_NAME}
     portalIP: ""
-    type: "ClusterIP"
-    sessionAffinity: "None"
+    type: ClusterIP
+    sessionAffinity: None
   status:
     loadBalancer: {}
 kind: Route
@@ -179,6 +182,6 @@ metadata:
   creationTimestamp: null
 spec:
   to:
-    kind: Service,
+    kind: Service
     name: ${BUILD_IMAGE_NAME}
 
