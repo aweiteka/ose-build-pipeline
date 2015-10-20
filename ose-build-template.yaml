@@ -9,38 +9,59 @@ metadata:
       An OpenShift v3 template that sets up an automated build pipeline
       to build, test and promote docker images from a Dockerfile.
     provider: aweiteka@redhat.com
+parameters:
+- name: BUILD_SOURCE_REPO
+  description: Git source URI of Dockerfile repository, e.g. https://github.com/myname/myrepo.git
+- name: BUILD_CONTEXT_DIR
+  description: Optional relative path to Dockerfile in source repository. If Dockerfile in base of repo, leave empty.
+  value: ""
+- name: BUILD_REF
+  description: Optional git branch or tag of build source repo
+  value: master
+- name: BASE_DOCKER_IMAGE
+  description: Base docker image from the Dockerfile FROM line.
+  value: centos
+- name: BASE_DOCKER_IMAGE_TAG
+  description: Base docker image tag from the Dockerfile FROM line.
+  value: latest
+- name: BUILD_IMAGE_NAME
+  description: The name of the image after it is built, not including :<tag>
+- name: BUILD_IMAGE_TAG
+  description: The tag of the image after it is built
+  value: latest
+- name: BUILD_IMAGE_PORT
+  description: The service port exposed for image testing
+  value: 8080
+- name: PULL_REGISTRY
+  description: When promoting, the internal openshift registry. If not known this can be updated later with 'oc edit bc promote-image-custom-build'
+  value: ""
+- name: PUSH_REGISTRY
+  description: When promoting, the URL of the registry to push toa
+  value: "docker.io"
+- name: GIT_SECRET
+  description: Git repo callback token
+  generate: expression
+  from: "[a-zA-Z0-9]{12}"
+- name: GENERIC_SECRET
+  description: Generic callback token
+  generate: expression
+  from: "[a-zA-Z0-9]{12}"
+labels:
+  template: automated-build
+
 objects:
 - kind: ImageStream
   apiVersion: v1
   metadata:
     name: "${BUILD_IMAGE_NAME}"
-    creationTimestamp:
   spec:
-    tags:
-    - name: "${BUILD_IMAGE_TAG}"
-      from:
-        Kind: ImageStreamTag
-        Name: "${BUILD_IMAGE_TAG}"
-  status:
-    dockerImageRepository: ''
-#- kind: ImageStream
-#  apiVersion: v1
-#  metadata:
-#    annotations:
-#      openshift.io/image.dockerRepositoryCheck: 2015-08-24T14:21:58Z
-#    creationTimestamp: null
-#    name: "${BASE_DOCKER_IMAGE}"
-#  spec:
-#    dockerImageRepository: "${BASE_DOCKER_IMAGE}"
-#  status:
-#    dockerImageRepository: ""
 - kind: BuildConfig
   apiVersion: v1
   metadata:
-    name: "${NAME}"
+    name: "${BUILD_IMAGE_NAME}"
     creationTimestamp:
     labels:
-      name: "${NAME}"
+      name: "${BUILD_IMAGE_NAME}"
   spec:
     triggers:
     - type: generic
@@ -49,7 +70,7 @@ objects:
     source:
       type: Git
       git:
-        uri: "${SOURCE_URI}"
+        uri: "${BUILD_SOURCE_REPO}"
         ref: "${BUILD_REF}"
       contextDir: "${BUILD_CONTEXT_DIR}"
     strategy:
@@ -63,15 +84,13 @@ objects:
         kind: ImageStreamTag
         name: "${BUILD_IMAGE_NAME}:${BUILD_IMAGE_TAG}"
     resources: {}
-  status:
-    lastVersion: 0
 - kind: BuildConfig
   apiVersion: v1
   metadata:
     creationTimestamp: null
     labels:
-      name: "${NAME}"
-    name: custom-build-promote
+      name: "${BUILD_IMAGE_NAME}"
+    name: promote-image-custom-build
   spec:
     output:
       to:
@@ -80,7 +99,7 @@ objects:
     resources: {}
     source:
       git:
-        uri: "${SOURCE_URI}"
+        uri: "${BUILD_SOURCE_REPO}"
       type: Git
     strategy:
       customStrategy:
@@ -91,7 +110,7 @@ objects:
           - name: PULL_REGISTRY
             value: ${PULL_REGISTRY}
           - name: PULL_IMAGE
-            value: ${PULL_IMAGE}
+            value: ${BUILD_IMAGE_NAME}
           - name: PUSH_REGISTRY
             value: ${PUSH_REGISTRY}
         exposeDockerSocket: true
@@ -99,35 +118,32 @@ objects:
     triggers:
     - imageChange: {}
       type: ImageChange
-  status:
-    lastVersion: 0
 - kind: DeploymentConfig
   apiVersion: v1
   metadata:
-    name: "${NAME}-${BUILD_IMAGE_TAG}"
+    name: "${BUILD_IMAGE_NAME}"
   spec:
     template:
       metadata:
         labels:
-          name: "${NAME}-${BUILD_IMAGE_TAG}"
+          name: "${BUILD_IMAGE_NAME}"
       spec:
         containers:
-        - name: "${NAME}"
+        - name: "${BUILD_IMAGE_NAME}"
           image: "${BUILD_IMAGE_NAME}"
-          volumeMounts:
-          - name: "${NAME}-scan"
-            mountPath: "/"
-        volumes:
-        - name: "${NAME}-scan"
-          persistentVolumeClaim:
-            claimName: ${NAME}
+          terminationMessagePath: /dev/termination-log
+          imagePullPolicy: IfNotPresent
+        restartPolicy: Always
+        dnsPolicy: ClusterFirst
     replicas: 1
     selector:
-      name: "${NAME}-${BUILD_IMAGE_TAG}"
+      name: "${BUILD_IMAGE_NAME}"
     triggers:
     - type: imageChange
       imageChangeParams:
         automatic: true
+        containerNames:
+          - ${BUILD_IMAGE_NAME}
         from:
           kind: ImageStreamTag
           name: "${BUILD_IMAGE_NAME}:${BUILD_IMAGE_TAG}"
@@ -136,121 +152,33 @@ objects:
         secret: "${GENERIC_SECRET}"
     strategy:
       type: Recreate
-      recreateParams:
+      resources: {}
 - kind: "Service"
   apiVersion: "v1"
   metadata:
-    name: "${NAME}-${BUILD_IMAGE_TAG}"
+    name: "${BUILD_IMAGE_NAME}"
     creationTimestamp: null
   spec:
     ports:
     - name: "test"
       protocol: "TCP"
-      port: 8000
-      targetPort: 80
+      port: ${BUILD_IMAGE_PORT}
+      targetPort: ${BUILD_IMAGE_PORT}
       nodePort: 0
     selector:
-      name: "${NAME}-${BUILD_IMAGE_TAG}"
+      name: "${BUILD_IMAGE_NAME}"
     portalIP: ""
     type: "ClusterIP"
     sessionAffinity: "None"
   status:
     loadBalancer: {}
-- kind: "PersistentVolumeClaim"
-  apiVersion: "v1"
-  metadata:
-    name: "${NAME}"
-    creationTimestamp: null
-  spec:
-    accessModes:
-    - ReadWriteOnce
-    resources:
-      requests:
-        storage: 1Gi
-- kind: DeploymentConfig
-  apiVersion: v1
-  metadata:
-    name: image-scanner
-  spec:
-    template:
-      metadata:
-        labels:
-          name: image-scanner
-      spec:
-        containers:
-        - name: image-scanner
-          image: "${SCANNER_IMAGE}"
-          volumeMounts:
-          - name: scan-container-contents
-            mountPath: /container-contents
-        volumes:
-        - name: scan-container-contents
-          persistentVolumeClaim:
-            claimName: ${NAME}
-    replicas: 1
-    selector:
-      name: image-scanner
-#- kind: Service
-#  apiVersion: v1
-#  metadata:
-#    name: image-scanner
-#    creationTimestamp: null
-#  spec:
-#    ports:
-#    - name: image-scanner
-#      protocol: TCP
-#      port: 8080
-#      targetPort: 8080
-#    selector:
-#      name: image-scanner
-#    portalIP: ""
-#    type: ClusterIP
-#    sessionAffinity: None
-#  status:
-#    loadBalancer: {}
-
-parameters:
-- name: NAME
-  description: |
-    Image workflow name. This will be used to identify the resources.
-- name: SOURCE_URI
-  description: Git source URI of Dockerfile repository
-- name: BUILD_CONTEXT_DIR
-  description: Optional relative path to Dockerfile in source repository.
-  default:
-- name: BUILD_REF
-  description: Optional git branch or tag
-  default: master
-- name: BASE_DOCKER_IMAGE
-  description: Base docker image from the Dockerfile FROM line.
-- name: BASE_DOCKER_IMAGE_TAG
-  description: Base docker image tag from the Dockerfile FROM line.
-  value: latest
-- name: BUILD_IMAGE_NAME
-  description: The name of the image after it is built, not including :<tag>
-- name: BUILD_IMAGE_TAG
-  description: The tag of the image after it is built
-  value: test
-- name: PULL_REGISTRY
-  description: When promoting, the internal openshift registry
-- name: PULL_IMAGE
-  description: When promoting, the image name
-- name: PUSH_REGISTRY
-  description: When promoting, the URL of the registry to push to
-- name: IMAGE_SCAN_JOB_NAME
-  description: Jenkins image scan job name
-  value: image-scan
-- name: SCANNER_IMAGE
-  description: Image scanner docker image
-  value: aweiteka/image-scanner
-- name: GIT_SECRET
-  description: Git repo callback token
-  generate: expression
-  from: "[a-zA-Z0-9]{12}"
-- name: GENERIC_SECRET
-  description: Generic callback token
-  generate: expression
-  from: "[a-zA-Z0-9]{12}"
-labels:
-  template: automated-build
+kind: Route
+apiVersion: v1
+metadata:
+  name: ${BUILD_IMAGE_NAME}
+  creationTimestamp: null
+spec:
+  to:
+    kind: Service,
+    name: ${BUILD_IMAGE_NAME}
 

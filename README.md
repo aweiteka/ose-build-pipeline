@@ -1,6 +1,6 @@
 # OpenShift Image Build Pipeline
 
-A container image automated build pipline based on OpenShift V3 and Jenkins to build, deploy, test, promote, certify and publish
+A container image automated build pipline based on OpenShift V3 and Jenkins to build, deploy, test and promote.
 
 ![CI workflow](docs/images/ci-workflow.png)
 
@@ -12,67 +12,52 @@ A container image automated build pipline based on OpenShift V3 and Jenkins to b
 1. Submit for certification.
 1. Publish to public registry. Image is available pull using new release tag.
 
-## Local Development setup
+## OpenShift
 
-We're using OpenShift all-in-one container deployment method. See [Getting Started](https://github.com/openshift/origin/#getting-started) instructions.
+OpenShift is a hosted service. You may want to host an instance of OpenShift yourself either because you want a development environment or you do not have access to a hosted environment. Refer to the [Installation methods](https://docs.openshift.org/latest/getting_started/administrators.html#installation-methods).
 
-1. Run OpenShift all-in-one as a container
+## Workflow Requirements
 
-        docker run -d --name origin --privileged --net=host \
-            -v /:/rootfs:ro -v /var/run:/var/run:rw \
-            -v /sys:/sys:ro -v /var/lib/docker:/var/lib/docker:rw \
-            -v /var/lib/openshift/openshift.local.volumes:/var/lib/openshift/openshift.local.volumes openshift/origin start
+* configured OpenShift registry
+* deployed a router for DNS resolution
+* created an OpenShift project
+* access to `oc` client. The CLI binary can be downloaded or run from a container.
 
-1. Enter the container to use the OpenShift CLI.
+        $ [sudo] docker run -it --name origin --entrypoint bash openshift/origin
 
-        $ sudo docker exec -it origin bash
+## Setup
 
-1. Create a registry
+1. Add the `edit` role to the `default` service account in the `<PROJECT_NAME>` project. This is so Jenkins can access the OpenShift environment using a service account token.
 
-        $ oadm registry --credentials=./openshift.local.config/master/openshift-registry.kubeconfig
+        $ oc policy add-role-to-user edit system:serviceaccount:<PROJECT_NAME>:default
 
-## Using OpenShift
+1. Upload the Jenkins master template.
 
-1. Login using default credentials.
+        $ oc create -f https://raw.githubusercontent.com/mfojtik/jenkins-ci/master/openshift/jenkins-master-ephemeral.json
 
-        $ oc login
-        Username: test
-        Password: test
+1. Start the Jenkins master. This will build and deploy the server so it will take several minutes. Replace `<YOUR_PASSWORD>`.
 
-1. Create a project
+        $ oc new-app jenkins-master -p JENKINS_PASSWORD=<YOUR_PASSWORD>
 
-        $ oc new-project test
-
-1. Add the `edit` role to the `default` service account in the `test` project. This is so Jenkins can access the OpenShift environment using a service account token.
-
-        $ oc policy add-role-to-user edit system:serviceaccount:test:default
-
-1. Upload the OpenShift template. This will make the template available to instantiate from your project namespace.
+1. Upload the OpenShift build template.
 
         oc create -f https://raw.githubusercontent.com/aweiteka/ose-build-pipeline/master/ose-build-template.yaml
 
- In the [OpenShift web interface](https://<host_ip_address>:8443) create a new instance of the template you uploaded.
+In the OpenShift web interface create a new instance of the template you uploaded.
 
-1. Login with credentials test/test
-1. Select "test" project
+1. Select <PROJECT_NAME> project
 1. Select "Add to Project", "Browse all templates..." and select the "automated-builds" template.
 1. Select "Edit Parameters", edit the form and select "Create".
 
-This creates a whole pile of resources: image streams, test deployment, a Jenkin master and the appropriate services and routes to access these resources.
-
-When the Jenkins master is deployed we need to get the service IP address and port.
-
-* OpenShift web UI: navigate to Browse, Services
-* CLI: `oc get service jenkins`
-
-**Note**: If you are not on the same host you'll need to [deploy and configure a router](https://docs.openshift.org/latest/admin_guide/install/deploy_router.html).
-
+This creates a whole pile of resources: image streams, test deployment and the appropriate services and routes to access these resources.
 
 ## Jenkins setup
 
-Now we're ready to create jobs in the Jenkins master. We'll use Jenkins Job builder to define the jobs then render them using a CLI tool.
+In the OpenShift web UI Overview click on the Jenkins service link and login with username "admin" and the password you selected when deployed. (The default is "password" if you did not select your own.) Note there may be a few jobs already created. For this workflow these will not be used.
 
-1. Copy the Jenkins Job Builder template and config directory to your source repository and edit. The directory should look something like this.
+Now we're ready to create the jobs in the Jenkins master. We'll use Jenkins Job builder to define the jobs then render them using a CLI tool.
+
+1. Copy the Jenkins Job Builder template and config directory from this repository to your source repository. The directory should look something like this.
 
         ├── config
         │   └── jenkins-jobs.ini
@@ -80,17 +65,20 @@ Now we're ready to create jobs in the Jenkins master. We'll use Jenkins Job buil
         ├── ...
         └── jenkins-jobs.yaml
 
-1. Edit the jenkins-jobs config file `config/jenkins-jobs.ini` changing the jenkins master service IP address.
+1. Edit the jenkins-jobs config file `config/jenkins-jobs.ini` changing the jenkins master route address. **Do NOT** add `jenkins-jobs.ini` to source control. It has your credentials. The password must be the admin user token. In the jenkins web UI in upper-right corner navigate Jenkins Admin pulldown > Configure > Show API Token.
 1. Run the Jenkins Job Builder tool to upload jobs to the Jenkins master. Run the container from the same directory of the `jenkins-jobs.yaml` file.
 
-        sudo atomic run aweiteka/jenkins-job-builder
+        [sudo] atomic run aweiteka/jenkins-job-builder
 
 1. Each time you want to make a change to a job, run this tool again to update the changes in the Jenkins master.
-1. Using a browser load the Jenkins web UI using the Jenkins service IP address and port. Default credentials are admin/password if you did not change them during the template deployment.
+
+## Customizing the automation
+
+TBD
 
 ## Migrating to Hosted OpenShift
 
-When you have everything working you'll want to migrate your project to a hosted OpenShift server.
+If you were working on a local development environment you can migrate your work to a hosted environment.
 
 Export your template. We're exporting all resources as template. TODO: we need this template locally.
 
@@ -169,16 +157,19 @@ Update your Jenkins endpoint so you can upload the jenkins jobs to the new jenki
 
         docker run -it --rm projectatomic/dockerfile-lint bash -c 'git clone https://github.com/projectatomic/atomicapp.git && dockerfile_lint -f atomicapp/Dockerfile'
 
-## Starting Jenkins Master as local image
-
-```
-sudo docker run -d --name jenkins -p 8080:8080 docker-registry.usersys.redhat.com/appinfra-ci/jenkins-master-appinfra
-```
-
 ## Troubleshooting
 
 1. "My image won't run on OpenShift."
 
     Is it running as root? OpenShift will not allow running as root. You may need to update your image. See ["Support arbitrary user ids"](https://access.redhat.com/documentation/en/openshift-enterprise/version-3.0/openshift-enterprise-30-creating-images/chapter-1-guidelines).
 
+1. Monitoring and debugging
 
+        oc get events -w         # tail openshift events
+        oc get builds            # list builds
+        oc build-logs <build>    # view a build log
+        oc get pods              # list pods
+        oc logs <pod>            # view a pod log
+        oc exec -it <pod> bash   # enter a pod interactively to debug
+        oc get dc                # list deployment configurations
+        oc edit dc <deploy_conf> # edit a deployment configuration
