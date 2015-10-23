@@ -33,7 +33,7 @@ OpenShift is a hosted service. You may want to host an instance of OpenShift you
 
 1. Upload the Jenkins master template.
 
-        $ oc create -f https://raw.githubusercontent.com/mfojtik/jenkins-ci/master/openshift/jenkins-master-ephemeral.json
+        $ oc create -f https://raw.githubusercontent.com/aweiteka/jenkins-ci/http-insecure/openshift/jenkins-master-ephemeral.json
 
 1. Start the Jenkins master. This will build and deploy the server so it will take several minutes. Replace `<YOUR_PASSWORD>`.
 
