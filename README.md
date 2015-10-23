@@ -18,10 +18,10 @@ OpenShift is a hosted service. You may want to host an instance of OpenShift you
 
 ## Workflow Requirements
 
+* access to OpenShift
 * configured OpenShift registry
-* deployed a router for DNS resolution
 * created an OpenShift project
-* access to `oc` client. The CLI binary can be downloaded or run from a container.
+* access to `oc` client. For remote OpenShift client use the CLI binary can be downloaded or run from a container.
 
         $ [sudo] docker run -it --name origin --entrypoint bash openshift/origin
 
@@ -39,17 +39,13 @@ OpenShift is a hosted service. You may want to host an instance of OpenShift you
 
         $ oc new-app jenkins-master -p JENKINS_PASSWORD=<YOUR_PASSWORD>
 
-1. Upload the OpenShift build template.
+1. Create the application. This creates a whole pile of resources (build config, image streams, test deployment, service)
 
-        oc create -f https://raw.githubusercontent.com/aweiteka/ose-build-pipeline/master/ose-build-template.yaml
+        oc new-app https://github.com/example/app.git --context-dir=path/to/dockerfile --name=<YOUR_APPLICATION_NAME>
 
-In the OpenShift web interface create a new instance of the template you uploaded.
+1. Create a DNS route for your application
 
-1. Select <PROJECT_NAME> project
-1. Select "Add to Project", "Browse all templates..." and select the "automated-builds" template.
-1. Select "Edit Parameters", edit the form and select "Create".
-
-This creates a whole pile of resources: image streams, test deployment and the appropriate services and routes to access these resources.
+        oc expose service <YOUR_APPLICATION_NAME>
 
 ## Jenkins setup
 
@@ -76,21 +72,19 @@ Now we're ready to create the jobs in the Jenkins master. We'll use Jenkins Job 
 
 TBD
 
-## Migrating to Hosted OpenShift
+## Migrating to another OpenShift Instance
 
 If you were working on a local development environment you can migrate your work to a hosted environment.
 
-Export your template. We're exporting all resources as template. TODO: we need this template locally.
+1. Export your template. We're exporting all resources as template. You may pass in the label option to select certain resources such as `-l app=mongodb`.
 
     oc export all --all -o json --as-template myproject > myproject.json
 
-We'll use the OpenShift container image interactively to login to the hosted (non-local) OpenShift server. You'll need the URL of the OpenShift server.
+1. Logout of the local environment.
 
-1. Enter the openshift/origin container image.
+        oc logout
 
-        sudo docker run -it --name origin --entrypoint bash openshift/origin
-
-1. Try to login.
+1. Try to login to the hosted environment.
 
         oc login https://<openshift_console_url>
 
@@ -98,47 +92,28 @@ We'll use the OpenShift container image interactively to login to the hosted (no
 
         oc login --token=<token> --server=https://<openshift_api_url>
 
-If you exit the container shell you can re-enter by starting it in interactive mode and continue your work.
+1. Import on the other Openshift server
 
-    sudo docker start -i origin
+        oc new-app -f myproject.json
 
-Update your Jenkins endpoint so you can upload the jenkins jobs to the new jenkins server.
-
-1. Get the Jenkins master URL:
+1. Update your Jenkins endpoint so you can upload the jenkins jobs to the new jenkins server. Get the Jenkins master URL:
 
         oc get route jenkins
 
 1. Update `config/jenkins-jobs.ini` file with the URL from step 1.
-1. Upload the jobs
+1. Upload the jobs.
 
         sudo atomic run aweiteka/jenkins-job-builder
 
 ## Notes
 
-* Upload template for all OpenShift users. As OpenShift admin upload template for all users and projects.
-
-        oc create -f ose-build-template.json -n openshift
-
-* Use OpenShift CLI to create application based on template
-
-        oc process -f ose-build-template.json -v SOURCE_URI=https://github.com/aweiteka/test-isv-auth.git,BASE_DOCKER_IMAGE=centos,BASE_DOCKER_IMAGE_TAG=centos7,BUILD_IMAGE_NAME=acmeapp,NAME=acme,TEST_CMD='/usr/bin/sleep 10' | oc create -f -
-
-
 * Delete resources in bulk
 
-        oc delete all -l template=automated-build
+        oc delete all -l <FOO=BAR>
 
 * Trigger OpenShift web hook remotely
 
         curl -X POST <openshift_webhook_url> [--insecure]
-
-* after test promote image with new tag (from jenkins?)
-
-        oc tag ${BUILD_IMAGE_NAME}:${BUILD_IMAGE_TAG} ${BUILD_IMAGE_NAME}:<new-tag>
-
-* import on another openshift server
-
-        oc new-app -f myproject.json
 
 * Image scanning. Assumes image contents in `/tmp/image-content`
 
@@ -163,7 +138,7 @@ Update your Jenkins endpoint so you can upload the jenkins jobs to the new jenki
 
     Is it running as root? OpenShift will not allow running as root. You may need to update your image. See ["Support arbitrary user ids"](https://access.redhat.com/documentation/en/openshift-enterprise/version-3.0/openshift-enterprise-30-creating-images/chapter-1-guidelines).
 
-1. Monitoring and debugging
+1. Monitoring and debugging tips
 
         oc get events -w         # tail openshift events
         oc get builds            # list builds

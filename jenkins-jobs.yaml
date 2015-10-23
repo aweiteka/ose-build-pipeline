@@ -9,27 +9,30 @@
 # 2. Edit the global parameters and config/jenkins-jobs.ini file
 # 3. Run jenkins-jobs CLI to upload XML to your jenkins master
 #    jenkins-jobs --conf config/jenkins-jobs.ini --ignore-cache update jenkins-jobs.yaml
-# 4. Once you're satisfied, commit and push. jenkins-jobs will be run each time the repo changes
+# 4. Once you're satisfied, commit changes to source control.
 ###
+
+# project bootstrap command:
+# oc new-app https://github.com/example/app.git
 
 ###
 # Edit these values for your project.
 ###
 - defaults:
     name: global
-    mail-to: me@example.com
+    node: master
+    mail-to: aweiteka@redhat.com
     description: >
         A jenkins-jobs template to create jobs in Jenkins.
         Do not edit this job through the web user interface.
-    ose-uri: https://localhost:8443
-    ose-username: test
-    ose-password: test
+    ose-uri: https://console.example.openshift.com
     ose-insecure: true
-    ose-project-namespace: test
+    ose-project-namespace: myproject
+    ose-token: <token_from_/var/run/secrets/kubernetes.io/serviceaccount/token>
     ose-token-file: /var/run/secrets/kubernetes.io/serviceaccount/token
-    ose-imagestream-name: some/image
-    ose-image-name: acmeapp
-    context-dir: path/to/dockerfile/dir
+    ose-image-name: myimage
+    upstream-image-name: centos
+    upstream-image-tag: latest
     oc-cmd: oc -n {ose-project-namespace} --token=`cat {ose-token-file}` --insecure-skip-tls-verify={ose-insecure} --server={ose-uri}
 # If you have more than once source repository copy the scm section
 # edit and use the name value to use it in your job
@@ -37,12 +40,10 @@
     name: dockerfile
     scm:
       - git:
-          url: 'https://github.com/some/project.git'
+          url: 'https://github.com/example/app.git'
           branches:
            - origin/master
           skip-tag: true
-          git-config-name: Your Name
-          git-config-email: {mail-to}
 
 ###
 # End edit values
@@ -52,42 +53,36 @@
    name: automated-builds
    jobs:
     # update this list if you add or remove a job-template
-    #- 'unit-test'
-    - 'image-scan'
-    - 'dockerfile-lint-test'
     - 'build-image'
     - 'functional-test'
-    - 'tag-release-image'
-    #- 'submit-certification'
+    - 'tag-image'
     - 'refresh-imagestreams'
-    - 'update-jobs-from-yaml'
-
-- job-template:
-    name: 'unit-test'
-    description: "OPTIONAL: Run source unit tests"
-    scm:
-      - dockerfile
-    builders:
-      - shell: 'make test'
-    publishers:
-    - archive:
-        artifacts: '**/**'
-        allow-empty: 'true'
 
 - job-template:
     name: 'functional-test'
-    description: Deploy container and run functional tests
+    description: Run functional tests
+    properties:
+      - delivery-pipeline:
+          stage: stage
     scm:
       - dockerfile
     builders:
+      - openshift-dep-verify:
+          dep-cfg: '{ose-image-name}'
+          replica-count: 1
+          api-url: '{ose-uri}'
+          namespace: '{ose-project-namespace}'
+          auth-token: '{ose-token}'
+      - openshift-svc-verify:
+          svc-name: '{ose-image-name}'
+          api-url: '{ose-uri}'
+          namespace: '{ose-project-namespace}'
+          auth-token: '{ose-token}'
+      # TODO: run real test suite on remote service endpoint
       - shell: |
-          #!/bin/bash -x
-
-          # WORK IN PROGRESS
-          DEPLOYMENT=$({oc-cmd} deploy {ose-image-name} --latest)
-          echo $DEPLOYMENT
-          {oc-cmd} get pods -l name={ose-image-name} -o template -t '{{ $a:=index .items 0 }}{{ $a.metadata.name }}'
-
+          IP=$({oc-cmd} get service {ose-image-name} -o template -t {{{{.spec.portalIP}}}})
+          PORT=$({oc-cmd} get service {ose-image-name} -o template -t '{{{{$port := index $.spec.ports 0}}}}{{{{$port.targetPort}}}}')
+          curl $IP:$PORT
     publishers:
     - archive:
         artifacts: '**/**'
@@ -101,113 +96,58 @@
 - job-template:
     name: 'refresh-imagestreams'
     description: Update OpenShift imagestreams to detect upstream image changes
-    builders:
-      - shell: '{oc-cmd} import-image {ose-imagestream-name}'
+    scm:
+      - openshift-img-streams:
+          image-stream-name: '{upstream-image-name}'
+          tag: '{upstream-image-tag}'
+          api-url: '{ose-uri}'
+          namespace: '{ose-project-namespace}'
+          auth-token: '{ose-token}'
     triggers:
       - timed: '@hourly'
-    publishers:
-      - trigger-parameterized-builds:
-          - project: 'build-image'
-            current-parameters: true
-            condition: 'UNSTABLE_OR_WORSE'
 
 - job-template:
     name: 'build-image'
-    description: Start a build in OpenShift
+    description: Starts a build in OpenShift
+    properties:
+      - delivery-pipeline:
+          stage: build
     scm:
       - dockerfile
+      - openshift-img-streams:
+          image-stream-name: '{upstream-image-name}'
+          tag: '{upstream-image-tag}'
+          api-url: '{ose-uri}'
+          namespace: '{ose-project-namespace}'
+          auth-token: '{ose-token}'
     triggers:
-      # run job if repo changes or if the image-scan job fails
-      - pollscm: "H/5 * * * *"
+      - timed: '@hourly'
     builders:
-      - shell: |
-          #!/bin/bash
-
-          ###
-          # kicking off the build exits immediately
-          # we follow the logs but the log tail succeeds even if the build fails
-          # grab the success-fail of the actual build
-          ###
-
-          BUILD=$({oc-cmd} start-build {ose-image-name})
-          sleep 5
-          {oc-cmd} build-logs $BUILD -f
-          # escape brackets with yet another bracket for jjb compatibility
-          BUILD_STATUS=$({oc-cmd} get builds $BUILD -o template -t {{{{.status.phase}}}})
-          count=1
-          attempts=10
-          while [ $BUILD_STATUS == "Running" -a $count -lt $attempts ]; do
-            echo "Waiting for build status ('$BUILD_STATUS') to complete, attempt $count/$attempts"
-            sleep 5
-            BUILD_STATUS=$({oc-cmd} get builds $BUILD -o template -t {{{{.status.phase}}}})
-            if [[ $BUILD_STATUS == "Failed" ]]; then
-              {oc-cmd} get builds $BUILD -o yaml
-              echo "Build status: $BUILD_STATUS"
-              exit 1
-            elif [[ $BUILD_STATUS == "Success" ]]; then
-              echo "Build status: $BUILD_STATUS"
-              exit 0
-            fi
-            count=$(($count+1))
-
-          done
-          echo "Build status: $BUILD_STATUS"
-          echo "Build has timed out, attempt $count/$attempts."
-          exit 1
+      - openshift-builder:
+          bld-cfg: '{ose-image-name}'
+          api-url: '{ose-uri}'
+          namespace: '{ose-project-namespace}'
+          auth-token: '{ose-token}'
+          follow-log: true
     publishers:
       - trigger-parameterized-builds:
           - project: 'functional-test'
-            current-parameters: true
-            condition: 'SUCCESS'
+            trigger-with-no-params: true
+            condition: 'UNSTABLE_OR_BETTER'
 
 - job-template:
-    name: 'image-scan'
-    description: Placeholder job to scan image for vulnerabilities FIXME
-    builders:
-      - shell: exit 1
-      - trigger-builds:
-        - project: "build-image"
-          current-parameters: true
-    triggers:
-      - timed: '@hourly'
-
-- job-template:
-    name: 'dockerfile-lint-test'
-    description: Check Dockerfile using dockerfile_lint tool
-    scm:
-      - dockerfile
-    triggers:
-      - pollscm: "H/5 * * * *"
-    builders:
-      # TODO: we need to run this in an image or enable sudo in jenkins master
-      - shell: 'sudo yum install -y npm'
-      - shell: 'npm install git+https://github.com/projectatomic/dockerfile_lint'
-      - shell: './node_modules/dockerfile_lint/bin/dockerfile_lint -f {context-dir}/Dockerfile'
-      - trigger-builds:
-        - project: "build-image"
-          current-parameters: true
-
-- job-template:
-    name: 'tag-release-image'
-    description: "Release image by tag"
+    name: 'tag-image'
+    description: "Tag image"
     parameters:
       - string:
           name: TAG
-          description: "Tag for image release"
+          description: "Image tag, e.g. my/image:TAG"
     builders:
-      - shell: echo "TODO use TAG param"
-      #- shell: {oc-cmd} tag {ose-image-name}:{ose-image-tag-major-version}-{ose-image-tag-build-number} {ose-image-name}:{ose-image-tag-major-version}-`expr {ose-image-tag-build-number} + {ose-image-tag-increment}`
-
-- job-template:
-    name: 'update-jobs-from-yaml'
-    description: >
-        Updates jenkins jobs from the Jenkins Job builder yaml file checked into scm.
-        This job creates or updates other jobs. It's the mother of all jobs.
-    scm:
-      - dockerfile
-    triggers:
-      - pollscm: "H/15 * * * *"
-    disabled: true
-    builders:
-        - shell: 'jenkins-jobs --conf {context-dir}/config/jenkins-jobs.ini --ignore-cache update -r {context-dir}/jenkins-jobs.yaml'
+      - openshift-img-tagger:
+          test-tag: '{ose-image-name}:latest'
+          # TODO: TAG is not interpolated
+          prod-tag: '{ose-image-name}:$TAG'
+          api-url: '{ose-uri}'
+          namespace: '{ose-project-namespace}'
+          auth-token: '{ose-token}'
 
